@@ -4,7 +4,7 @@
 // hint.
 
 // I AM NOT DONE
-
+fn call_me(num:u32);
 fn main() {
     call_me();
 }
