@@ -99,8 +99,7 @@ async fn http1_server(shutdown_rx:oneshot::Receiver<()>) -> Result<(), Box<dyn s
             }
         });
     }
-    tokio::select!{
-}
+
 }
 struct IOTypeNotSend {
     _marker: PhantomData<*const ()>,
