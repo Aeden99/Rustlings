@@ -3,16 +3,12 @@
 //Due to insufficient knowledge of alternatives of some data types and functions here,
 //as well as their crucialness, I have not made any changes to some parts of their code.
 
-use http_body_util::BodyExt;
 use std::cell::Cell;
-use std::net::SocketAddr;
 use std::rc::Rc;
-use tokio::io::{self, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 use hyper::body::{Body as HttpBody, Bytes, Frame};
 use hyper::service::service_fn;
-use hyper::Request;
 use hyper::{Error, Response};
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -59,30 +55,11 @@ fn main(){
         let local = tokio::task::LocalSet::new();
         local.block_on(&rntm, http1_server()).unwrap();
     });
-
-    let client_http1 = thread::spawn(move || {
-        let rntm = tokio::runtime::Builder::new_current_thread()
-            .enable_io()
-            .enable_time()
-            .build()
-            .expect("runtime could not be built");
-        let local = tokio::task::LocalSet::new();
-        local
-            .block_on(
-                &rntm,
-                http1_client("http://127.0.0.1:7878".parse::<hyper::Uri>().unwrap()),
-                //Using localhost here instead of this IpV4 address could have serve as an enum
-                //of an IpV4 and and IpV6 (::1) address
-            )
-            .unwrap();
-    });
-
     server_http1.join().unwrap();
-    client_http1.join().unwrap();
 }
 async fn http1_server() -> Result<(), Box<dyn std::error::Error>> {
 
-    let listener = TcpListener::bind(([127,0,0,1],7878)).await?;
+    let listener = TcpListener::bind(("127.0.0.1",7878)).await?;
     let counter = Rc::new(Cell::new(0));
 
     loop {
@@ -91,13 +68,13 @@ async fn http1_server() -> Result<(), Box<dyn std::error::Error>> {
         let io = IOTypeNotSend::new(TokioIo::new(stream));
 
         let cnt = counter.clone();
-        //This is a static type allocation allowing parallel connections 
+        //This is a static type allocation allowing parallel connections to have different counters
 
         let service = service_fn(move |_| {
             let prev = cnt.get();
             cnt.set(prev + 1);
             let value = cnt.get();
-            async move { Ok::<_, Error>(Response::new(Body::from(format!("Request #{}", value)))) }
+            async move { Ok::<_, Error>(Response::new(Body::from(format!("Successful Connection No.{} from Address {:?}", value,socket)))) }
         });
 
         tokio::task::spawn_local(async move {
@@ -110,7 +87,6 @@ async fn http1_server() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 }
-
 
 struct IOTypeNotSend {
     _marker: PhantomData<*const ()>,
@@ -146,6 +122,7 @@ impl hyper::rt::Write for IOTypeNotSend {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<() , std::io::Error>> {
+        println!("Shutting down");
         Pin::new(&mut self.stream).poll_shutdown(cx)
     }
 }
