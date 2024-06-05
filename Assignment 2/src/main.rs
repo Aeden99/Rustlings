@@ -17,6 +17,8 @@ use std::thread;
 use tokio::net::TcpStream;
 mod support;
 use support::TokioIo;
+use tokio::signal;
+use tokio::sync::oneshot;
 
 struct Body {
     marker: PhantomData<*const ()>,
@@ -46,6 +48,7 @@ impl HttpBody for Body {
 
 fn main(){
     pretty_env_logger::init();
+    let (shutdown_tx,shutdown_rx)=oneshot::channel();
     let server_http1 = thread::spawn(move || {
         let rntm = tokio::runtime::Builder::new_current_thread()
             .enable_io()
@@ -53,14 +56,24 @@ fn main(){
             .build()
             .expect("runtime could not be built");
         let local = tokio::task::LocalSet::new();
-        local.block_on(&rntm, http1_server()).unwrap();
+        local.block_on(&rntm, http1_server(shutdown_rx)).unwrap();
     });
+    let shutdown_thread=thread::spawn(move ||{
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            signal::ctrl_c().await.expect("shutdown signal not received");
+            println!("Shutting Down Server");
+            shutdown_tx.send(()).unwrap();
+        })});
     server_http1.join().unwrap();
+    shutdown_thread.join().unwrap();
 }
-async fn http1_server() -> Result<(), Box<dyn std::error::Error>> {
+async fn http1_server(shutdown_rx:oneshot::Receiver<()>) -> Result<(), Box<dyn std::error::Error>> {
 
     let listener = TcpListener::bind(("127.0.0.1",7878)).await?;
     let counter = Rc::new(Cell::new(0));
+    let shutdown=async{
+        shutdown_rx.await.ok();
+    };
 
     loop {
         let (stream, socket) = listener.accept().await?;
@@ -86,8 +99,9 @@ async fn http1_server() -> Result<(), Box<dyn std::error::Error>> {
             }
         });
     }
+    tokio::select!{
 }
-
+}
 struct IOTypeNotSend {
     _marker: PhantomData<*const ()>,
     stream: TokioIo<TcpStream>,
@@ -122,7 +136,6 @@ impl hyper::rt::Write for IOTypeNotSend {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<() , std::io::Error>> {
-        println!("Shutting down");
         Pin::new(&mut self.stream).poll_shutdown(cx)
     }
 }
