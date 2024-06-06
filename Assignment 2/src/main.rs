@@ -49,6 +49,7 @@ impl HttpBody for Body {
 fn main(){
     pretty_env_logger::init();
     let (shutdown_tx,shutdown_rx)=oneshot::channel();
+    let (shutdown_cx,shutdown_dx)=oneshot::channel();
     let server_http1 = thread::spawn(move || {
         let rntm = tokio::runtime::Builder::new_current_thread()
             .enable_io()
@@ -56,7 +57,7 @@ fn main(){
             .build()
             .expect("runtime could not be built");
         let local = tokio::task::LocalSet::new();
-        local.block_on(&rntm, http1_server(shutdown_rx)).unwrap();
+        local.block_on(&rntm, http1_server(shutdown_rx,shutdown_dx)).unwrap();
     });
     let shutdown_thread=thread::spawn(move ||{
         tokio::runtime::Runtime::new().unwrap().block_on(async {
@@ -64,17 +65,34 @@ fn main(){
             println!("Shutting Down Server");
             shutdown_tx.send(()).unwrap();
         })});
+    let shutdown_thread_2=thread::spawn(move ||{
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            signal::ctrl_c().await.expect("shutdown signal not received");
+            println!("Shutting Down Runtime");
+            shutdown_cx.send(()).unwrap();
+        })});
     server_http1.join().unwrap();
     shutdown_thread.join().unwrap();
+    shutdown_thread_2.join().unwrap();
 }
-async fn http1_server(shutdown_rx:oneshot::Receiver<()>) -> Result<(), Box<dyn std::error::Error>> {
+async fn http1_server(shutdown_rx:oneshot::Receiver<()>,shutdown_dx:oneshot::Receiver<()>) -> Result<(), Box<dyn std::error::Error>> {
 
     let listener = TcpListener::bind(("127.0.0.1",7878)).await?;
     let counter = Rc::new(Cell::new(0));
     let shutdown=async{
         shutdown_rx.await.ok();
     };
-
+    let shutdown_2=async{
+        shutdown_dx.await.ok();
+    };
+    tokio::select!{
+        _=shutdown=>{
+            println!("Shutting Down All Threads");
+        },
+        _=shutdown_2=>{
+            println!("Shutting Down All Threads");
+        },
+    }
     loop {
         let (stream, socket) = listener.accept().await?;
 
@@ -99,7 +117,6 @@ async fn http1_server(shutdown_rx:oneshot::Receiver<()>) -> Result<(), Box<dyn s
             }
         });
     }
-
 }
 struct IOTypeNotSend {
     _marker: PhantomData<*const ()>,
