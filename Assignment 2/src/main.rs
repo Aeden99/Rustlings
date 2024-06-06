@@ -87,10 +87,10 @@ async fn http1_server(shutdown_rx:oneshot::Receiver<()>,shutdown_dx:oneshot::Rec
     };
     tokio::select!{
         _=shutdown=>{
-            println!("Shutting Down All Threads");
+            println!("Dropping All Threads");
         },
         _=shutdown_2=>{
-            println!("Shutting Down All Threads");
+            println!("Dropping All Threads");
         },
     }
     loop {
