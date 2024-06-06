@@ -68,7 +68,7 @@ fn main(){
     let shutdown_thread_2=thread::spawn(move ||{
         tokio::runtime::Runtime::new().unwrap().block_on(async {
             signal::ctrl_c().await.expect("shutdown signal not received");
-            println!("Shutting Down Runtime");
+            println!("Shutting Down Runtimes");
             shutdown_cx.send(()).unwrap();
         })});
     server_http1.join().unwrap();
